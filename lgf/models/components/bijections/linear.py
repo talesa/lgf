@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[4] / "gitmodules" / "nsf"))
 try:
-    from nde.transforms import LULinear
+    from gitmodules.nsf.nde.transforms import LULinear
 finally:
     sys.path.pop(0)
 

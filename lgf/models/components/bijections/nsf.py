@@ -4,11 +4,10 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-sys.path.insert(0, str(Path(__file__).parents[4] / "gitmodules" / "nsf"))
 try:
-    from nde.transforms.coupling import PiecewiseRationalQuadraticCouplingTransform
-    from nde.transforms.autoregressive import MaskedPiecewiseRationalQuadraticAutoregressiveTransform
-    from nn import ResidualNet
+    from gitmodules.nsf.nde.transforms.coupling import PiecewiseRationalQuadraticCouplingTransform
+    from gitmodules.nsf.nde.transforms.autoregressive import MaskedPiecewiseRationalQuadraticAutoregressiveTransform
+    from gitmodules.nsf.nn import ResidualNet
     from utils import create_alternating_binary_mask
 finally:
     sys.path.pop(0)
