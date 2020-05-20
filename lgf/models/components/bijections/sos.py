@@ -3,7 +3,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pyro.distributions.transforms.polynomial import PolynomialFlow
+# TODO FIXME
+# from pyro.distributions.transforms.polynomial import PolynomialFlow
 from pyro.nn import AutoRegressiveNN
 
 from .bijection import Bijection

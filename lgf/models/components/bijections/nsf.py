@@ -8,7 +8,7 @@ try:
     from gitmodules.nsf.nde.transforms.coupling import PiecewiseRationalQuadraticCouplingTransform
     from gitmodules.nsf.nde.transforms.autoregressive import MaskedPiecewiseRationalQuadraticAutoregressiveTransform
     from gitmodules.nsf.nn import ResidualNet
-    from utils import create_alternating_binary_mask
+    from gitmodules.nsf.utils import create_alternating_binary_mask
 finally:
     sys.path.pop(0)
 
