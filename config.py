@@ -255,7 +255,7 @@ def get_uci_config(dataset, model, use_baseline):
             "max_bad_valid_epochs": 1000,
             "test_batch_size": 1000,
 
-            "num_ortho_vecs": 8,
+            "num_ortho_vecs": 7,
             "diag_activation": "tanh",
             "num_flow_layers": 4,
         }

@@ -21,34 +21,39 @@ class OrthogonalSylvesterBijection(Bijection):
         shape = (num_input_channels,)
         super().__init__(x_shape=shape, z_shape=shape)
 
-        self.r1_triu = nn.Parameter(num_input_channels, num_input_channels)
-        self.r2_triu = nn.Parameter(num_input_channels, num_input_channels)
-        self.r1_unrestricted_diag = nn.Parameter(num_input_channels)
-        self.r2_unrestricted_diag = nn.Parameter(num_input_channels)
-        self.q_parameters = nn.Parameter(num_input_channels, num_ortho_vecs)
-        self.b = nn.Parameter(1, 1, num_ortho_vecs)
+        if num_ortho_vecs is None:
+            num_ortho_vecs = num_input_channels
 
-        # self.num_input_channels = num_input_channels
-        # self.num_ortho_vecs = num_ortho_vecs
+        self.r1_triu = nn.Parameter(torch.zeros(num_ortho_vecs, num_ortho_vecs))
+        self.r2_triu = nn.Parameter(torch.zeros(num_ortho_vecs, num_ortho_vecs))
+        self.r1_unrestricted_diag = nn.Parameter(torch.zeros(num_ortho_vecs))
+        self.r2_unrestricted_diag = nn.Parameter(torch.zeros(num_ortho_vecs))
+        self.q_parameters = nn.Parameter(torch.zeros(num_input_channels, num_ortho_vecs))
+        self.b = nn.Parameter(torch.zeros(num_ortho_vecs))
+
+        for param in self.parameters():
+            torch.nn.init.uniform_(param, -0.01, 0.01)
+
+        self.num_input_channels = num_input_channels
+        self.num_ortho_vecs = num_ortho_vecs
 
         self.r_diag_activation = activation_functions[diag_activation]
 
         # Orthogonalization parameters
         self.orthogonalization_steps = orthogonalization_steps
 
-        if self.num_ortho_vecs == self.z_size:
+        if num_ortho_vecs == num_input_channels:
             self.cond = 1.e-5
         else:
             self.cond = 1.e-6
 
-        identity = torch.eye(self.num_ortho_vecs, self.num_ortho_vecs)
+        identity = torch.eye(num_ortho_vecs, num_ortho_vecs)
         # Add batch dimension
         identity = identity.unsqueeze(0)
 
         # Masks needed for triangular R1 and R2.
-        triu_mask = torch.triu(torch.ones(self.num_ortho_vecs, self.num_ortho_vecs), diagonal=0)
-        triu_mask = triu_mask.unsqueeze(0).unsqueeze(3)
-        diag_idx = torch.arange(0, self.num_ortho_vecs).long()
+        triu_mask = torch.triu(torch.ones(num_ortho_vecs, num_ortho_vecs), diagonal=0)
+        diag_idx = torch.arange(0, num_ortho_vecs).long()
 
         # Put tensors in buffer so that they will be moved to GPU if needed by any call of .cuda()
         self.register_buffer('_eye', identity)
@@ -74,29 +79,28 @@ class OrthogonalSylvesterBijection(Bijection):
         #  if this doesn't work create a separate parameter just for the diagonal
         r1 = self.r1_triu * self.triu_mask
         diag_r1 = self.r_diag_activation(self.r1_unrestricted_diag)
-        r1[:, self.diag_idx, self.diag_idx] = diag_r1
+        r1[self.diag_idx, self.diag_idx] = diag_r1
 
         r2 = self.r2_triu * self.triu_mask
         diag_r2 = self.r_diag_activation(self.r2_unrestricted_diag)
-        r2[:, self.diag_idx, self.diag_idx] = diag_r2
+        r2[self.diag_idx, self.diag_idx] = diag_r2
 
         # Create orthogonal matrices
         q_ortho = self.construct_orthogonal_matrix(self.q_parameters)
 
-        qr1 = torch.bmm(q_ortho, r1)
-        qr2 = torch.bmm(q_ortho, r2.transpose(2, 1))
+        qr1 = torch.matmul(q_ortho, r1)
+        qr2 = torch.matmul(q_ortho, r2.transpose(0, 1))
 
         z = x
-        r2qzb = torch.bmm(z, qr2.unsqueeze(0)) + self.b
-        z = z + torch.bmm(self.h(r2qzb), qr1.transpose(2, 1).unsqueeze(0))
-        # z = z.squeeze(1)
+        r2qzb = torch.matmul(z, qr2) + self.b.unsqueeze(0)
+        z = z + torch.matmul(self.h(r2qzb), qr1.transpose(1, 0))
 
         # Compute log|det J|
         # Output log_det_j in shape (batch_size) instead of (batch_size,1)
         diag_j = diag_r1 * diag_r2
-        diag_j = self.der_h(r2qzb).squeeze(1) * diag_j
+        diag_j = self.der_h(r2qzb) * diag_j.unsqueeze(0)
         diag_j = 1. + diag_j
-        log_det_j = diag_j.abs().log()
+        log_det_j = diag_j.abs().log().sum(-1)
 
         return {
             "z": z,
@@ -106,22 +110,22 @@ class OrthogonalSylvesterBijection(Bijection):
     def construct_orthogonal_matrix(self, q):
         """
         Construct orthogonal matrix from its parameterization.
-        :param q:  q contains batches of matrices, shape : (1, z_size * num_ortho_vecs)
-        :return: orthogonalized matrix, shape: (1, z_size, num_ortho_vecs)
+        :param q:  q contains batches of matrices, shape : (1, num_input_channels * num_ortho_vecs)
+        :return: orthogonalized matrix, shape: (1, num_input_channels, num_ortho_vecs)
         """
 
         # Reshape to shape (1, z_size * num_ortho_vecs)
-        q = q.view(1, self.z_size * self.num_ortho_vecs)
+        q = q.view(1, self.num_input_channels * self.num_ortho_vecs)
 
         norm = torch.norm(q, p=2, dim=1, keepdim=True)
         amat = torch.div(q, norm)
         dim0 = amat.size(0)
-        amat = amat.view(dim0, self.z_size, self.num_ortho_vecs)
+        amat = amat.view(dim0, self.num_input_channels, self.num_ortho_vecs)
 
         max_norm = 0.
 
         # Iterative orthogonalization
-        for s in range(self.steps):
+        for s in range(self.orthogonalization_steps):
             tmp = torch.bmm(amat.transpose(2, 1), amat)
             tmp = self._eye - tmp
             tmp = self._eye + 0.5 * tmp
@@ -143,13 +147,12 @@ class OrthogonalSylvesterBijection(Bijection):
             # print()
 
         # Reshaping: first dimension is batch_size
-        amat = amat.view(-1, self.num_flows, self.z_size, self.num_ortho_vecs)
-        amat = amat.transpose(0, 1)
+        amat = amat.view(self.num_input_channels, self.num_ortho_vecs)
 
         return amat
 
     def h(self, x):
-        return torch.nn.functional.tanh(x)
+        return torch.tanh(x)
 
     def der_h(self, x):
         return self.der_tanh(x)
