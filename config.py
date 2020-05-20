@@ -249,6 +249,29 @@ def get_uci_config(dataset, model, use_baseline):
             "lr_schedule": "cosine"
         }
 
+    elif model in ["sylvester-orthogonal"]:
+        config = {
+            "max_epochs": 1000,
+            "max_bad_valid_epochs": 1000,
+            "test_batch_size": 1000,
+
+            "num_ortho_vecs": 8,
+            "diag_activation": "tanh",
+            "num_flow_layers": 4,
+        }
+
+        if dataset in ["power", "gas"]:
+            config.update({
+                "lr": 0.0005,
+                "train_batch_size": 5120
+            })
+
+            # We convert the presecribed number of steps into epochs
+            if dataset == "gas":
+                config["max_epochs"] = (400_000 * 512) // 852_174
+            elif dataset == "power":
+                config["max_epochs"] = (400_000 * 512) // 1_615_917
+
     else:
         assert False, f"Invalid model `{model}' for dataset `{dataset}''"
 

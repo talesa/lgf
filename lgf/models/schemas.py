@@ -1,7 +1,7 @@
 def get_schema(config):
     model = config["model"] 
     if model in [
-        "glow", "multiscale-realnvp", "flat-realnvp", "maf", "sos", "bnaf", "nsf"
+        "glow", "multiscale-realnvp", "flat-realnvp", "maf", "sos", "bnaf", "nsf", "sylvester-orthogonal"
     ]:
         return get_schema_from_base(config)
 
@@ -154,6 +154,10 @@ def get_base_schema(config):
             coupler_num_hidden_channels=config["g_num_hidden_channels"],
             lu_decomposition=True
         )
+
+    elif model == "sylvester-orthogonal":
+        print(config)
+        return get_sylvester_orthogonal_schema(**config)
 
     else:
         assert False, f"Invalid model `{model}'"
@@ -468,6 +472,7 @@ def get_nsf_schema(
 
     return result
 
+
 def get_bnaf_schema(
         num_density_layers,
         num_hidden_layers, # TODO: More descriptive name
@@ -491,6 +496,26 @@ def get_bnaf_schema(
             {
                 "type": "batch-norm",
                 "per_channel": False
+            }
+        ]
+
+    return result
+
+
+def get_sylvester_orthogonal_schema(
+        num_flow_layers,
+        num_ortho_vecs,
+        diag_activation,
+        **kwargs
+):
+    result = [{"type": "flatten"}]
+
+    for i in range(num_flow_layers):
+        result += [
+            {
+                "type": "sylvester-orthogonal",
+                "num_ortho_vecs": num_ortho_vecs,
+                "diag_activation": diag_activation,
             }
         ]
 

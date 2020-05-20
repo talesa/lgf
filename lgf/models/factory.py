@@ -26,7 +26,8 @@ from .components.bijections import (
     AutoregressiveRationalQuadraticSplineBijection,
     BlockNeuralAutoregressiveBijection,
     LULinearBijection,
-    RandomChannelwisePermutationBijection
+    RandomChannelwisePermutationBijection,
+    OrthogonalSylvesterBijection
 )
 from .components.densities import (
     DiagonalGaussianDensity,
@@ -270,6 +271,14 @@ def get_bijection(
             hidden_channels_factor=layer_config["hidden_channels_factor"],
             activation=layer_config["activation"],
             residual=layer_config["residual"]
+        )
+
+    elif layer_config["type"] == "sylvester-orthogonal":
+        assert len(x_shape) == 1
+        return OrthogonalSylvesterBijection(
+            num_input_channels=x_shape[0],
+            num_ortho_vecs=layer_config["num_ortho_vecs"],
+            diag_activation=layer_config["diag_activation"],
         )
 
     else:
