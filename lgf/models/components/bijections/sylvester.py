@@ -16,8 +16,8 @@ from .bijection import Bijection
 activation_functions = {'tanh': nn.Tanh(), 'softplus': nn.Softplus()}
 
 
-class OrthogonalSylvesterBijection(Bijection):
-    def __init__(self, num_input_channels, num_ortho_vecs=None, diag_activation='tanh', orthogonalization_steps=100):
+class BaseSylvesterBijection(Bijection):
+    def __init__(self, num_input_channels, diag_activation='tanh', num_ortho_vecs=None):
         shape = (num_input_channels,)
         super().__init__(x_shape=shape, z_shape=shape)
 
@@ -38,14 +38,6 @@ class OrthogonalSylvesterBijection(Bijection):
         self.num_ortho_vecs = num_ortho_vecs
 
         self.r_diag_activation = activation_functions[diag_activation]
-
-        # Orthogonalization parameters
-        self.orthogonalization_steps = orthogonalization_steps
-
-        if num_ortho_vecs == num_input_channels:
-            self.cond = 1.e-5
-        else:
-            self.cond = 1.e-6
 
         identity = torch.eye(num_ortho_vecs, num_ortho_vecs)
         # Add batch dimension
@@ -107,6 +99,32 @@ class OrthogonalSylvesterBijection(Bijection):
             "log-jac": log_det_j.view(x.shape[0], 1)
         }
 
+    def h(self, x):
+        return torch.tanh(x)
+
+    def der_h(self, x):
+        return self.der_tanh(x)
+
+    def der_tanh(self, x):
+        return 1 - self.h(x) ** 2
+
+    def _z_to_x(self, z, **kwargs):
+        # This could be implemented using fixed-point iteration method.
+        raise NotImplementedError("_z_to_x not implemented for the Sylvester flow.")
+
+
+class OrthogonalSylvesterBijection(BaseSylvesterBijection):
+    def __init__(self, num_input_channels, diag_activation='tanh', num_ortho_vecs=None, orthogonalization_steps=100):
+        super().__init__(num_input_channels, diag_activation=diag_activation, num_ortho_vecs=num_ortho_vecs)
+
+        # Orthogonalization procedure parameters
+        self.orthogonalization_steps = orthogonalization_steps
+
+        if num_ortho_vecs == num_input_channels:
+            self.cond = 1.e-5
+        else:
+            self.cond = 1.e-6
+
     def construct_orthogonal_matrix(self, q):
         """
         Construct orthogonal matrix from its parameterization.
@@ -150,16 +168,3 @@ class OrthogonalSylvesterBijection(Bijection):
         amat = amat.view(self.num_input_channels, self.num_ortho_vecs)
 
         return amat
-
-    def h(self, x):
-        return torch.tanh(x)
-
-    def der_h(self, x):
-        return self.der_tanh(x)
-
-    def der_tanh(self, x):
-        return 1 - self.h(x) ** 2
-
-    def _z_to_x(self, z, **kwargs):
-        # This could be implemented using fixed-point iteration method.
-        raise NotImplementedError("_z_to_x not implemented for the Sylvester flow.")
