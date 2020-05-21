@@ -38,6 +38,7 @@ class BaseSylvesterBijection(Bijection):
             torch.nn.init.uniform_(param, -0.01, 0.01)
 
         self.num_input_channels = num_input_channels
+        self.z_size = num_input_channels
         self.num_ortho_vecs = num_ortho_vecs
         self.permute = permute
 
@@ -160,12 +161,12 @@ class OrthogonalSylvesterBijection(BaseSylvesterBijection):
         """
 
         # Reshape to shape (1, z_size * num_ortho_vecs)
-        q = q.view(1, self.num_input_channels * self.num_ortho_vecs)
+        q = q.view(1, self.z_size * self.num_ortho_vecs)
 
         norm = torch.norm(q, p=2, dim=1, keepdim=True)
         amat = torch.div(q, norm)
         dim0 = amat.size(0)
-        amat = amat.view(dim0, self.num_input_channels, self.num_ortho_vecs)
+        amat = amat.view(dim0, self.z_size, self.num_ortho_vecs)
 
         max_norm = 0.
 
@@ -192,7 +193,7 @@ class OrthogonalSylvesterBijection(BaseSylvesterBijection):
             # print()
 
         # Reshaping: first dimension is batch_size
-        amat = amat.view(self.num_input_channels, self.num_ortho_vecs)
+        amat = amat.view(self.z_size, self.num_ortho_vecs)
 
         return amat
 
@@ -213,7 +214,7 @@ class HouseholderSylvesterBijection(BaseSylvesterBijection):
         """
 
         # Reshape to shape (num_flows * num_householder, z_size)
-        q = q.view(-1, self.num_input_channels)
+        q = q.view(-1, self.z_size)
 
         norm = torch.norm(q, p=2, dim=1, keepdim=True)   # ||v||_2
         v = torch.div(q, norm)  # v / ||v||_2
@@ -224,15 +225,15 @@ class HouseholderSylvesterBijection(BaseSylvesterBijection):
         amat = self._eye - 2 * vvT  # NOTICE: v is already normalized! so there is no need to calculate vvT/vTv
 
         # Reshaping: first dimension is num_flows
-        amat = amat.view(-1, self.num_householder, self.num_input_channels, self.num_input_channels)
+        amat = amat.view(-1, self.num_householder, self.z_size, self.z_size)
 
         tmp = amat[:, 0]
         for k in range(1, self.num_householder):
             tmp = torch.bmm(amat[:, k], tmp)
 
-        amat = tmp.view(-1, self.num_input_channels, self.num_input_channels)
+        amat = tmp.view(-1, self.z_size, self.z_size)
 
-        amat = amat.view(self.num_input_channels, self.num_input_channels)
+        amat = amat.view(self.z_size, self.z_size)
 
         return amat
 
@@ -242,13 +243,11 @@ class TriangularSylvesterBijection(BaseSylvesterBijection):
     Alternates between setting the orthogonal matrix equal to permutation and identity matrix for each flow.
     """
     def __init__(self, num_input_channels, diag_activation='tanh', permute=True):
-        super().__init__(num_input_channels, diag_activation=diag_activation, q_parameters_nelem=0, permute=permute)
+        super().__init__(num_input_channels, diag_activation=diag_activation, q_parameters_nelem=None, permute=permute)
 
         if permute:
             permutation = torch.arange(num_input_channels - 1, -1, -1).long()
             self.register_buffer('permutation', permutation)
-
-        print(self.q_parameters)
 
 
 class ExponentialSylvesterBijection(BaseSylvesterBijection):
@@ -285,20 +284,20 @@ class CayleySylvesterBijection(BaseSylvesterBijection):
         :return: orthogonalized matrix, shape: (z_size, z_size)
         """
 
-        def cayley(X):
-            n = X.size(-1)
-            Id = torch.eye(n, dtype=X.dtype, device=X.device).unsqueeze(0)
-            return torch.gesv(Id - X, Id + X)[0]
-
-        # Reshape to shape (num_flows * batch_size * num_householder, z_size)
         A = q.view(-1, self.z_size, self.z_size)
         A = A.triu(1)
         A = A - A.transpose(-1, -2)
-        B = cayley(A)
+        B = self.cayley(A)
 
         B = B.view(self.z_size, self.z_size)
 
         return B
+
+    @staticmethod
+    def cayley(X):
+        n = X.size(-1)
+        Id = torch.eye(n, dtype=X.dtype, device=X.device).unsqueeze(0)
+        return torch.solve(Id - X, Id + X)[0]
 
 
 # Exponential utils
@@ -316,7 +315,7 @@ def p7(X):
 
 def exp_pade(X):
     p7pos, p7neg = p7(X)
-    return torch.gesv(p7pos, p7neg)[0]
+    return torch.solve(p7pos, p7neg)[0]
 
 
 def matrix_pow_batch(A, k):

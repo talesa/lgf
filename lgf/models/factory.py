@@ -27,7 +27,11 @@ from .components.bijections import (
     BlockNeuralAutoregressiveBijection,
     LULinearBijection,
     RandomChannelwisePermutationBijection,
-    OrthogonalSylvesterBijection
+    OrthogonalSylvesterBijection,
+    HouseholderSylvesterBijection,
+    TriangularSylvesterBijection,
+    ExponentialSylvesterBijection,
+    CayleySylvesterBijection,
 )
 from .components.densities import (
     DiagonalGaussianDensity,
@@ -278,6 +282,36 @@ def get_bijection(
         return OrthogonalSylvesterBijection(
             num_input_channels=x_shape[0],
             num_ortho_vecs=layer_config["num_ortho_vecs"],
+            diag_activation=layer_config["diag_activation"],
+        )
+
+    elif layer_config["type"] == "sylvester-householder":
+        assert len(x_shape) == 1
+        return HouseholderSylvesterBijection(
+            num_input_channels=x_shape[0],
+            num_householder=layer_config["num_householder"],
+            diag_activation=layer_config["diag_activation"],
+        )
+
+    elif layer_config["type"] == "sylvester-triangular":
+        assert len(x_shape) == 1
+        return TriangularSylvesterBijection(
+            num_input_channels=x_shape[0],
+            diag_activation=layer_config["diag_activation"],
+            permute=layer_config["permute"]
+        )
+
+    elif layer_config["type"] == "sylvester-exponential":
+        assert len(x_shape) == 1
+        return ExponentialSylvesterBijection(
+            num_input_channels=x_shape[0],
+            diag_activation=layer_config["diag_activation"],
+        )
+
+    elif layer_config["type"] == "sylvester-cayley":
+        assert len(x_shape) == 1
+        return CayleySylvesterBijection(
+            num_input_channels=x_shape[0],
             diag_activation=layer_config["diag_activation"],
         )
 

@@ -1,7 +1,9 @@
 def get_schema(config):
     model = config["model"] 
     if model in [
-        "glow", "multiscale-realnvp", "flat-realnvp", "maf", "sos", "bnaf", "nsf", "sylvester-orthogonal"
+        "glow", "multiscale-realnvp", "flat-realnvp", "maf", "sos", "bnaf", "nsf",
+        "sylvester-orthogonal", "sylvester-householder", "sylvester-triangular", "sylvester-exponential",
+        "sylvester-cayley"
     ]:
         return get_schema_from_base(config)
 
@@ -155,9 +157,9 @@ def get_base_schema(config):
             lu_decomposition=True
         )
 
-    elif model == "sylvester-orthogonal":
-        print(config)
-        return get_sylvester_orthogonal_schema(**config)
+    elif model in ["sylvester-orthogonal", "sylvester-householder", "sylvester-triangular",
+                   "sylvester-exponential", "sylvester-cayley"]:
+        return get_sylvester_schema(**config)
 
     else:
         assert False, f"Invalid model `{model}'"
@@ -502,21 +504,20 @@ def get_bnaf_schema(
     return result
 
 
-def get_sylvester_orthogonal_schema(
+def get_sylvester_schema(
         num_flow_layers,
-        num_ortho_vecs,
-        diag_activation,
+        model,
         **kwargs
 ):
     result = [{"type": "flatten"}]
 
     for i in range(num_flow_layers):
-        result += [
-            {
-                "type": "sylvester-orthogonal",
-                "num_ortho_vecs": num_ortho_vecs,
-                "diag_activation": diag_activation,
-            }
-        ]
+        layer = {
+            "type": model,
+            **kwargs,
+        }
+        if model == "sylvester-triangular":
+            layer["permute"] = True if i % 2 == 0 else False
+        result += [layer]
 
     return result

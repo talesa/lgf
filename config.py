@@ -249,13 +249,15 @@ def get_uci_config(dataset, model, use_baseline):
             "lr_schedule": "cosine"
         }
 
-    elif model in ["sylvester-orthogonal"]:
+    elif model in ["sylvester-orthogonal", "sylvester-householder", "sylvester-triangular",
+                   "sylvester-exponential", "sylvester-cayley"]:
         config = {
             "max_epochs": 1000,
             "max_bad_valid_epochs": 1000,
             "test_batch_size": 1000,
 
             "num_ortho_vecs": 7,
+            "num_householder": 7,
             "diag_activation": "tanh",
             "num_flow_layers": 4,
         }

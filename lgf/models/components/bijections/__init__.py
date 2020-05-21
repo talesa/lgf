@@ -51,4 +51,10 @@ from .bnaf import BlockNeuralAutoregressiveBijection
 
 from .linear import LULinearBijection
 
-from .sylvester import OrthogonalSylvesterBijection
+from .sylvester import (
+    OrthogonalSylvesterBijection,
+    HouseholderSylvesterBijection,
+    TriangularSylvesterBijection,
+    ExponentialSylvesterBijection,
+    CayleySylvesterBijection,
+)
