@@ -15,12 +15,14 @@ from ignite.contrib.handlers.tensorboard_logger import TensorboardLogger, Output
 
 
 class AverageMetric(Metric):
+    _required_output_keys = ("loss",)
+
     def reset(self):
         self._sums = Counter()
         self._num_examples = Counter()
 
     def update(self, output):
-        for k, v in output.items():
+        for k, v in zip(self._required_output_keys, output):
             self._sums[k] += torch.sum(v)
             self._num_examples[k] += torch.numel(v)
 
