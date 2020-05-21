@@ -1,8 +1,9 @@
 import torch
 from torch import nn
 
-from .bijection import Bijection
+import numpy as np
 
+from .bijection import Bijection
 
 # Models below are based on https://github.com/riannevdberg/sylvester-flows
 
@@ -198,7 +199,7 @@ class OrthogonalSylvesterBijection(BaseSylvesterBijection):
 
 class HouseholderSylvesterBijection(BaseSylvesterBijection):
     def __init__(self, num_input_channels, num_householder, diag_activation='tanh'):
-        super().__init__(num_input_channels, diag_activation=diag_activation, num_ortho_vecs=num_input_channels,
+        super().__init__(num_input_channels, diag_activation=diag_activation,
                          q_parameters_nelem=num_input_channels*num_householder)
 
         self.num_householder = num_householder
@@ -241,9 +242,167 @@ class TriangularSylvesterBijection(BaseSylvesterBijection):
     Alternates between setting the orthogonal matrix equal to permutation and identity matrix for each flow.
     """
     def __init__(self, num_input_channels, diag_activation='tanh', permute=True):
-        super().__init__(num_input_channels, diag_activation=diag_activation, num_ortho_vecs=num_input_channels,
-                         q_parameters_nelem=0, permute=permute)
+        super().__init__(num_input_channels, diag_activation=diag_activation, q_parameters_nelem=0, permute=permute)
 
         if permute:
             permutation = torch.arange(num_input_channels - 1, -1, -1).long()
             self.register_buffer('permutation', permutation)
+
+        print(self.q_parameters)
+
+
+class ExponentialSylvesterBijection(BaseSylvesterBijection):
+    def __init__(self, num_input_channels, diag_activation='tanh'):
+        super().__init__(num_input_channels, diag_activation=diag_activation,
+                         q_parameters_nelem=num_input_channels*num_input_channels)
+
+    def construct_orthogonal_matrix(self, q):
+        """
+        Construct an orthogonal matrix from its parameterization.
+        :param q:  q contains batches of matrices, shape : (z_size * z_size)
+        :return: orthogonalized matrix, shape: (z_size, z_size)
+        """
+
+        A = q.view(-1, self.z_size, self.z_size)
+        A = A.triu(1)
+        A = A - A.transpose(-1, -2)
+        B = exp_skew(A)
+
+        B = B.view(self.z_size, self.z_size)
+
+        return B
+
+
+class CayleySylvesterBijection(BaseSylvesterBijection):
+    def __init__(self, num_input_channels, diag_activation='tanh'):
+        super().__init__(num_input_channels, diag_activation=diag_activation,
+                         q_parameters_nelem=num_input_channels*num_input_channels)
+
+    def construct_orthogonal_matrix(self, q):
+        """
+        Construct an orthogonal matrix from its parameterization.
+        :param q:  q contains batches of matrices, shape : (z_size * z_size)
+        :return: orthogonalized matrix, shape: (z_size, z_size)
+        """
+
+        def cayley(X):
+            n = X.size(-1)
+            Id = torch.eye(n, dtype=X.dtype, device=X.device).unsqueeze(0)
+            return torch.gesv(Id - X, Id + X)[0]
+
+        # Reshape to shape (num_flows * batch_size * num_householder, z_size)
+        A = q.view(-1, self.z_size, self.z_size)
+        A = A.triu(1)
+        A = A - A.transpose(-1, -2)
+        B = cayley(A)
+
+        B = B.view(self.z_size, self.z_size)
+
+        return B
+
+
+# Exponential utils
+def p7(X):
+    n = X.size(-1)
+    Id = torch.eye(n, dtype=X.dtype, device=X.device).unsqueeze(0)
+    X1 = torch.matmul(X, X)
+    X2 = torch.matmul(X1, X1)
+    X3 = torch.matmul(X1, X2)
+    P1 = 17297280. *  Id + 1995840. * X1 + 25200. * X2 + 56. * X3
+    P2 = torch.matmul(X,
+                  8648640. * Id + 277200. * X1 + 1512. * X2 + X3)
+    return P1 + P2, P1 - P2
+
+
+def exp_pade(X):
+    p7pos, p7neg = p7(X)
+    return torch.gesv(p7pos, p7neg)[0]
+
+
+def matrix_pow_batch(A, k):
+    ksorted, iidx = torch.sort(k)
+    # Abusing bincount...
+    count = torch.bincount(ksorted)
+    nonzero = torch.nonzero(count)
+    A = torch.matrix_power(A, 2**ksorted[0])
+    last = ksorted[0]
+    processed = count[nonzero[0]]
+    for exp in nonzero[1:]:
+        new, last = exp - last, exp
+        A[iidx[processed:]] = torch.matrix_power(A[iidx[processed:]], 2**new.item())
+        processed += count[exp]
+    return A
+
+
+def expm(X, exp=exp_pade):
+    """
+    Scaling and squaring trick
+    """
+    norm = torch.norm(X, dim=(1, 2))
+    more = norm >= 1.
+    k = torch.zeros(norm.size(), dtype=torch.long, device=X.device)
+    k[more] = torch.ceil(torch.log2(norm[more])).long()
+    # Terrible hack, make it cleaner in the future
+    B = torch.pow(.5, k.float()).unsqueeze(1).unsqueeze(2).expand_as(X) * X
+    E = exp(B)
+    return matrix_pow_batch(E, k)
+
+
+def expm_frechet(A, E):
+    n = A.size(-1)
+    M = torch.zeros(A.size(0), 2*n, 2*n, dtype=A.dtype, device=A.device, requires_grad=False)
+    M[:, :n, :n] = A
+    M[:, n:, n:] = A
+    M[:, :n, n:] = E
+    return expm(M)[:, :n, n:]
+
+
+class exp_skew_class(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, A):
+        B = expm(A)
+        ctx.save_for_backward(A, B)
+        return B
+
+    @staticmethod
+    def backward(ctx, G):
+        def skew(X):
+            return .5 * (X - X.transpose(1, 2))
+        # print(G)
+        A, B = ctx.saved_tensors
+        grad = skew(B.transpose(1, 2).matmul(G))
+        out = B.matmul(expm_frechet(-A, grad))
+        # correct precission errors
+        return skew(out)
+
+
+def exp_taylor(X):
+    n = X.size(0)
+    Id = torch.eye(n, dtype=X.dtype, device=X.device)
+    X2 = torch.mm(X, X)
+    X4 = torch.mm(X2, X2)
+    inv_fact = [1.]
+    for i in range(1, 8):
+        inv_fact.append(inv_fact[i-1] / float(i))
+    return Id + inv_fact[4]*X4 + X2.mm(inv_fact[2]*Id + inv_fact[6]*X4) +\
+           X.mm(Id + inv_fact[5]*X4 + X2.mm(inv_fact[3]*Id + inv_fact[7]*X4))
+
+
+def expI(X, exp=exp_taylor):
+    """
+    Scaling and squaring trick
+    """
+    norm = X.norm()
+    if norm < 1.:
+        k = 0
+        B = X
+    else:
+        k = int(np.ceil(np.log2(float(norm))))
+        B = X * (2.**-k)
+    E = exp(B)
+    for _ in range(k):
+        E = torch.mm(E, E)
+    return E
+
+
+exp_skew = exp_skew_class.apply
