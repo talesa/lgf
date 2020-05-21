@@ -17,7 +17,8 @@ activation_functions = {'tanh': nn.Tanh(), 'softplus': nn.Softplus()}
 
 
 class BaseSylvesterBijection(Bijection):
-    def __init__(self, num_input_channels, q_parameters_nelem, diag_activation='tanh', num_ortho_vecs=None):
+    def __init__(self, num_input_channels, q_parameters_nelem, diag_activation='tanh', num_ortho_vecs=None,
+                 permute=None):
         shape = (num_input_channels,)
         super().__init__(x_shape=shape, z_shape=shape)
 
@@ -28,7 +29,8 @@ class BaseSylvesterBijection(Bijection):
         self.r2_triu = nn.Parameter(torch.zeros(num_ortho_vecs, num_ortho_vecs))
         self.r1_unrestricted_diag = nn.Parameter(torch.zeros(num_ortho_vecs))
         self.r2_unrestricted_diag = nn.Parameter(torch.zeros(num_ortho_vecs))
-        self.q_parameters = nn.Parameter(torch.zeros(q_parameters_nelem))
+        if permute is None:
+            self.q_parameters = nn.Parameter(torch.zeros(q_parameters_nelem))
         self.b = nn.Parameter(torch.zeros(num_ortho_vecs))
 
         for param in self.parameters():
@@ -36,6 +38,7 @@ class BaseSylvesterBijection(Bijection):
 
         self.num_input_channels = num_input_channels
         self.num_ortho_vecs = num_ortho_vecs
+        self.permute = permute
 
         self.r_diag_activation = activation_functions[diag_activation]
 
@@ -77,15 +80,29 @@ class BaseSylvesterBijection(Bijection):
         diag_r2 = self.r_diag_activation(self.r2_unrestricted_diag)
         r2[self.diag_idx, self.diag_idx] = diag_r2
 
-        # Create orthogonal matrices
-        q_ortho = self.construct_orthogonal_matrix(self.q_parameters)
+        if self.permute is None:
+            # Create orthogonal matrices
+            q_ortho = self.construct_orthogonal_matrix(self.q_parameters)
+            qr1 = torch.matmul(q_ortho, r1)
+            qr2 = torch.matmul(q_ortho, r2.transpose(0, 1))
+            z = x
+        elif self.permute is True:
+            qr1 = r1
+            qr2 = r2
+            z = x[:, self.permutation]
+        elif self.permute is False:
+            qr1 = r1
+            qr2 = r2
+            z = x
 
-        qr1 = torch.matmul(q_ortho, r1)
-        qr2 = torch.matmul(q_ortho, r2.transpose(0, 1))
-
-        z = x
+        # TODO there might be a bug here?
         r2qzb = torch.matmul(z, qr2) + self.b.unsqueeze(0)
-        z = z + torch.matmul(self.h(r2qzb), qr1.transpose(1, 0))
+        z_delta = torch.matmul(self.h(r2qzb), qr1.transpose(1, 0))
+
+        if self.permute is True:
+            z_delta = z_delta[:, self.permutation]
+
+        z = x + z_delta
 
         # Compute log|det J|
         # Output log_det_j in shape (batch_size) instead of (batch_size,1)
@@ -187,8 +204,6 @@ class HouseholderSylvesterBijection(BaseSylvesterBijection):
         self.num_householder = num_householder
         assert self.num_householder > 0
 
-        self.cond = 1.e-6
-
     def construct_orthogonal_matrix(self, q):
         """
         Construct an orthogonal matrix from its parameterization.
@@ -219,3 +234,16 @@ class HouseholderSylvesterBijection(BaseSylvesterBijection):
         amat = amat.view(self.num_input_channels, self.num_input_channels)
 
         return amat
+
+
+class TriangularSylvesterBijection(BaseSylvesterBijection):
+    """
+    Alternates between setting the orthogonal matrix equal to permutation and identity matrix for each flow.
+    """
+    def __init__(self, num_input_channels, diag_activation='tanh', permute=True):
+        super().__init__(num_input_channels, diag_activation=diag_activation, num_ortho_vecs=num_input_channels,
+                         q_parameters_nelem=0, permute=permute)
+
+        if permute:
+            permutation = torch.arange(num_input_channels - 1, -1, -1).long()
+            self.register_buffer('permutation', permutation)
