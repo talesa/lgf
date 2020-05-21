@@ -17,7 +17,7 @@ activation_functions = {'tanh': nn.Tanh(), 'softplus': nn.Softplus()}
 
 
 class BaseSylvesterBijection(Bijection):
-    def __init__(self, num_input_channels, diag_activation='tanh', num_ortho_vecs=None):
+    def __init__(self, num_input_channels, q_parameters_nelem, diag_activation='tanh', num_ortho_vecs=None):
         shape = (num_input_channels,)
         super().__init__(x_shape=shape, z_shape=shape)
 
@@ -28,7 +28,7 @@ class BaseSylvesterBijection(Bijection):
         self.r2_triu = nn.Parameter(torch.zeros(num_ortho_vecs, num_ortho_vecs))
         self.r1_unrestricted_diag = nn.Parameter(torch.zeros(num_ortho_vecs))
         self.r2_unrestricted_diag = nn.Parameter(torch.zeros(num_ortho_vecs))
-        self.q_parameters = nn.Parameter(torch.zeros(num_input_channels, num_ortho_vecs))
+        self.q_parameters = nn.Parameter(torch.zeros(q_parameters_nelem))
         self.b = nn.Parameter(torch.zeros(num_ortho_vecs))
 
         for param in self.parameters():
@@ -99,6 +99,14 @@ class BaseSylvesterBijection(Bijection):
             "log-jac": log_det_j.view(x.shape[0], 1)
         }
 
+    def construct_orthogonal_matrix(self, q):
+        """
+        Construct orthogonal matrix from its parameterization.
+        :param q: q contains batches of matrix parameters (as required by a particular parameterization).
+        :return: orthogonalized matrix, shape: (num_input_channels, num_ortho_vecs)
+        """
+        raise NotImplementedError
+
     def h(self, x):
         return torch.tanh(x)
 
@@ -115,7 +123,8 @@ class BaseSylvesterBijection(Bijection):
 
 class OrthogonalSylvesterBijection(BaseSylvesterBijection):
     def __init__(self, num_input_channels, diag_activation='tanh', num_ortho_vecs=None, orthogonalization_steps=100):
-        super().__init__(num_input_channels, diag_activation=diag_activation, num_ortho_vecs=num_ortho_vecs)
+        super().__init__(num_input_channels, diag_activation=diag_activation, num_ortho_vecs=num_ortho_vecs,
+                         q_parameters_nelem=num_input_channels*num_ortho_vecs)
 
         # Orthogonalization procedure parameters
         self.orthogonalization_steps = orthogonalization_steps
@@ -166,5 +175,47 @@ class OrthogonalSylvesterBijection(BaseSylvesterBijection):
 
         # Reshaping: first dimension is batch_size
         amat = amat.view(self.num_input_channels, self.num_ortho_vecs)
+
+        return amat
+
+
+class HouseholderSylvesterBijection(BaseSylvesterBijection):
+    def __init__(self, num_input_channels, num_householder, diag_activation='tanh'):
+        super().__init__(num_input_channels, diag_activation=diag_activation, num_ortho_vecs=num_input_channels,
+                         q_parameters_nelem=num_input_channels*num_householder)
+
+        self.num_householder = num_householder
+        assert self.num_householder > 0
+
+        self.cond = 1.e-6
+
+    def construct_orthogonal_matrix(self, q):
+        """
+        Construct an orthogonal matrix from its parameterization.
+        :param q:  q contains batches of matrices, shape : (z_size * num_householder)
+        :return: orthogonalized matrix, shape: (z_size, z_size)
+        """
+
+        # Reshape to shape (num_flows * num_householder, z_size)
+        q = q.view(-1, self.num_input_channels)
+
+        norm = torch.norm(q, p=2, dim=1, keepdim=True)   # ||v||_2
+        v = torch.div(q, norm)  # v / ||v||_2
+
+        # Calculate Householder Matrices
+        vvT = torch.bmm(v.unsqueeze(2), v.unsqueeze(1))  # v * v_T : batch_dot( B x L x 1 * B x 1 x L ) = B x L x L
+
+        amat = self._eye - 2 * vvT  # NOTICE: v is already normalized! so there is no need to calculate vvT/vTv
+
+        # Reshaping: first dimension is num_flows
+        amat = amat.view(-1, self.num_householder, self.num_input_channels, self.num_input_channels)
+
+        tmp = amat[:, 0]
+        for k in range(1, self.num_householder):
+            tmp = torch.bmm(amat[:, k], tmp)
+
+        amat = tmp.view(-1, self.num_input_channels, self.num_input_channels)
+
+        amat = amat.view(self.num_input_channels, self.num_input_channels)
 
         return amat
