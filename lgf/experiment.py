@@ -107,17 +107,17 @@ def setup_experiment(config):
     else:
         writer = DummyWriter()
 
-    if config["dataset"] in ["cifar10", "svhn", "fashion-mnist", "mnist"]:
-        visualizer = ImageDensityVisualizer(writer=writer)
-    elif train_loader.dataset.x.shape[1:] == (2,):
-        visualizer = TwoDimensionalDensityVisualizer(
-            writer=writer,
-            train_loader=train_loader,
-            num_elbo_samples=config["num_test_elbo_samples"],
-            device=device
-        )
-    else:
-        visualizer = DummyDensityVisualizer(writer=writer)
+    visualizer = DummyDensityVisualizer(writer=writer)
+    if config["produce_visualizations"]:
+        if config["dataset"] in ["cifar10", "svhn", "fashion-mnist", "mnist", "miniboome"]:
+            visualizer = ImageDensityVisualizer(writer=writer)
+        elif train_loader.dataset.x.shape[1:] == (2,):
+            visualizer = TwoDimensionalDensityVisualizer(
+                writer=writer,
+                train_loader=train_loader,
+                num_elbo_samples=config["num_test_elbo_samples"],
+                device=device
+            )
 
     train_loss = lambda density, x: -density.metrics(x, config["num_train_elbo_samples"])["elbo"]
     valid_loss = lambda density, x: -density.metrics(x, config["num_valid_elbo_samples"])["log-prob"]

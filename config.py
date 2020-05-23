@@ -304,6 +304,8 @@ def get_uci_config(dataset, model, use_baseline):
         "num_valid_elbo_samples": 5 if not use_baseline else 1,
         "num_test_elbo_samples": 10 if not use_baseline else 1,
 
+        "produce_visualizations": False,
+
         **config
     }
 
