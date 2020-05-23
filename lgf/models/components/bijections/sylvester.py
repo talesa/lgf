@@ -92,11 +92,11 @@ class BaseSylvesterBijection(Bijection):
             z = x
         elif self.permute is True:
             qr1 = r1
-            qr2 = r2
+            qr2 = r2.transpose(0, 1)
             z = x[:, self.permutation]
         elif self.permute is False:
             qr1 = r1
-            qr2 = r2
+            qr2 = r2.transpose(0, 1)
             z = x
 
         # TODO there might be a bug here?
