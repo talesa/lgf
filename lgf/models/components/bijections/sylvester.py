@@ -34,6 +34,8 @@ class BaseSylvesterBijection(Bijection):
             self.q_parameters = nn.Parameter(torch.zeros(q_parameters_nelem))
         self.b = nn.Parameter(torch.zeros(num_ortho_vecs))
 
+        # TODO better init - do svd on a linear layer initalization and see if the statistics are the same as on the
+        #  whole thing - they should be
         for param in self.parameters():
             torch.nn.init.uniform_(param, -0.01, 0.01)
 

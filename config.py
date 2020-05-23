@@ -254,18 +254,18 @@ def get_uci_config(dataset, model, use_baseline):
         config = {
             "max_epochs": 1000,
             "max_bad_valid_epochs": 1000,
-            "test_batch_size": 1000,
 
-            "num_ortho_vecs": 7,
-            "num_householder": 7,
+            "num_ortho_vecs": 43,
+            "num_householder": 43,
             "diag_activation": "tanh",
-            "num_flow_layers": 4,
+            "num_flow_layers": 32,
         }
 
-        if dataset in ["power", "gas"]:
+        if dataset in ["power", "gas", "miniboone"]:
             config.update({
                 "lr": 0.0005,
-                "train_batch_size": 5120
+                "train_batch_size": 29_556,
+                "test_batch_size": 29_556,
             })
 
             # We convert the presecribed number of steps into epochs
@@ -273,6 +273,8 @@ def get_uci_config(dataset, model, use_baseline):
                 config["max_epochs"] = (400_000 * 512) // 852_174
             elif dataset == "power":
                 config["max_epochs"] = (400_000 * 512) // 1_615_917
+            elif dataset == "miniboone":
+                config["max_epochs"] = 100_000
 
     else:
         assert False, f"Invalid model `{model}' for dataset `{dataset}''"
