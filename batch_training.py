@@ -2,10 +2,10 @@ from plumbum import local
 from plumbum.cmd import sed, awk, git
 import time
 
-def inspect_gpus(memory_threshold=1200,
+def inspect_gpus(memory_threshold=500,
                  gpu_util_threshold=5,
                  allow_lightly_used_gpus=False,
-                 share_with=[],
+                 share_with=tuple(),
                  max_nr_processes=2,
                  upper_memory_threshold=3000,
                  upper_gpu_util_threshold=30,
@@ -32,7 +32,7 @@ def inspect_gpus(memory_threshold=1200,
                                   GPU utilisation < gpu_util_threshold,
                                   then the GPU is regarded as free.
         allow_lightly_used_gpus (bool):
-        share_with (list of strings):
+        share_with (tuple of strings):
         upper_memory_threshold (int):
         upper_gpu_util_threshold (int): If `allow_lightly_used_gpus=True` and memory and gpu
                                         utilisation are under the upper thresholds and there
@@ -148,11 +148,10 @@ def execute_process(params, gpuid):
     command = ['python', filename,
                '--dataset', dataset,
                '--model', model,
-               '--config',
-               f'num_flow_layers={num_flow_layers}',
-               f'num_ortho_vecs={int(num_ortho_vecs * datasets_dims[dataset])}',
-               f'num_householder={int(num_householder * datasets_dims[dataset])}'
-               f'lr={lr}'
+               '--config', f'num_flow_layers={num_flow_layers}',
+               '--config', f'num_ortho_vecs={int(num_ortho_vecs * datasets_dims[dataset])}',
+               '--config', f'num_householder={int(num_householder * datasets_dims[dataset])}',
+               '--config', f'lr={lr}'
                ]
     command = list(map(str, command))
     print(f"CUDA_VISIBLE_DEVICES={str(gpuid)} {' '.join(command)}")
@@ -175,7 +174,7 @@ models = [
     "sylvester-exponential",
     "sylvester-cayley"
 ]
-lrs = [2e-4]
+lrs = [5e-4]
 
 num_flow_layers = [32]
 
@@ -184,14 +183,18 @@ num_ortho_vecs = [1.]
 num_householder = [1.]
 
 tries = 1
-params_list += list(itertools.product(datasets, models, lrs[::-1])) * tries
+params_list += list(itertools.product(datasets, models, lrs[::-1], num_flow_layers, num_ortho_vecs, num_householder)) * tries
 
 # lrs = [5e-3, 2e-3, 8e-4, 5e-4, 2e-4, 8e-5, 5e-5]
 
 print(params_list)
 
 while params_list:
-    free_gpus = inspect_gpus(average=2)
+    free_gpus = inspect_gpus(
+        memory_threshold=5500,
+        gpu_util_threshold=50,
+        average=2,
+        share_with=('agolinsk',))
     if free_gpus:
         params = params_list.pop()
         execute_process(params, free_gpus[0]['gpu_nr'])

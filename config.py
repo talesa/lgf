@@ -48,7 +48,6 @@ def get_2d_config(dataset, model, use_baseline):
     elif model == "nsf":
         config = {
             "num_density_layers": 2,
-            "num_density_layers": 2,
             "num_bins": 64 if use_baseline else 24,
             "num_hidden_channels": 32,
             "num_hidden_layers": 2,
