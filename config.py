@@ -258,6 +258,10 @@ def get_uci_config(dataset, model, use_baseline):
             "num_householder": 43,
             "diag_activation": "tanh",
             "num_flow_layers": 32,
+
+            "lr_schedule": "plateau",
+            "lr_scheduler_plateau_patience": 1,
+            "lr_scheduler_plateau_factor": 0.21,
         }
 
         if dataset in ["power", "gas", "miniboone"]:

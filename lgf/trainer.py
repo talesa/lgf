@@ -152,7 +152,8 @@ class Trainer:
 
         self._opt.step()
 
-        self._lr_scheduler.step()
+        if self.config["lr_schedule"] != 'plateau':
+            self._lr_scheduler.step()
 
         return {"loss": loss}
 
@@ -186,6 +187,9 @@ class Trainer:
     def _validate(self, engine):
         state = self._validator.run(data=self._valid_loader)
         valid_loss = state.metrics["loss"]
+
+        if self.config["lr_schedule"] == 'plateau':
+            self._lr_scheduler.step(valid_loss)
 
         # TODO this is ugly, it would be great to wrap this in the Writer class
         # Open the file in the append-binary mode

@@ -99,6 +99,13 @@ def setup_experiment(config):
             optimizer=opt,
             lr_lambda=lambda epoch: 1.
         )
+    elif config["lr_schedule"] == "plateau":
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer=opt,
+            patience=config["lr_scheduler_plateau_patience"],
+            factor=config["lr_scheduler_plateau_factor"],
+            verbose=True,
+        )
     else:
         assert False, f"Invalid learning rate schedule `{config['lr_schedule']}'"
 
