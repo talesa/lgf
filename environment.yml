@@ -20,3 +20,4 @@ dependencies:
     - pyro-ppl
     - torchtestcase
     - pipenv
+    - plumbum
