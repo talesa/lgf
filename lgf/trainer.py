@@ -68,7 +68,9 @@ class Trainer:
 
             writer,
             should_checkpoint_latest,
-            should_checkpoint_best_valid
+            should_checkpoint_best_valid,
+
+            config
     ):
         self._module = module
         self._module.to(device)
@@ -96,6 +98,8 @@ class Trainer:
         self._writer = writer
         self._should_checkpoint_best_valid = should_checkpoint_best_valid
 
+        self.config = config
+
         ### Training
 
         self._trainer = Engine(self._train_batch)
@@ -110,6 +114,16 @@ class Trainer:
         if should_checkpoint_latest:
             self._trainer.add_event_handler(Events.EPOCH_COMPLETED, lambda _: self._save_checkpoint("latest"))
 
+        ### Testing
+
+        self._tester = Engine(self._test_batch)
+
+        AverageMetric().attach(self._tester)
+        ProgressBar(persist=False, desc="Testing").attach(self._tester)
+
+        # self._trainer.add_event_handler(Events.EPOCH_COMPLETED, self._test_hook)
+        self._tester.add_event_handler(Events.EPOCH_STARTED, lambda _: self._module.eval())
+
         ### Validation
 
         if early_stopping:
@@ -120,16 +134,6 @@ class Trainer:
 
             self._trainer.add_event_handler(Events.EPOCH_COMPLETED, self._validate)
             self._validator.add_event_handler(Events.EPOCH_STARTED, lambda _: self._module.eval())
-
-        ### Testing
-
-        self._tester = Engine(self._test_batch)
-
-        AverageMetric().attach(self._tester)
-        ProgressBar(persist=False, desc="Testing").attach(self._tester)
-
-        self._trainer.add_event_handler(Events.EPOCH_COMPLETED, self._test)
-        self._tester.add_event_handler(Events.EPOCH_STARTED, lambda _: self._module.eval())
 
     def train(self):
         self._trainer.run(data=self._train_loader, max_epochs=self._max_epochs)
@@ -155,17 +159,23 @@ class Trainer:
     @torch.no_grad()
     def _test(self, engine):
         epoch = engine.state.epoch
+
+        state = self._tester.run(data=self._test_loader)
+
+        for k, v in state.metrics.items():
+            self._writer.write_scalar(f"test/{k}", v, global_step=engine.state.epoch)
+
+        # TODO this is ugly would be great to make this part of the Writer class
+        # Open the file in the append-binary mode
+        with open(os.path.join(self._writer._logdir, 'test_loss.dat'), 'ab') as f:
+            f.write(struct.pack('if', epoch, state.metrics['elbo'].item()))
+
+        self._visualizer.visualize(self._module, epoch)
+
+    def _test_hook(self, engine):
+        epoch = engine.state.epoch
         if (epoch - 1) % self._epochs_per_test == 0: # Test after first epoch
-            state = self._tester.run(data=self._test_loader)
-
-            for k, v in state.metrics.items():
-                self._writer.write_scalar(f"test/{k}", v, global_step=engine.state.epoch)
-
-            # Open the file in the append-binary mode
-            with open('test_loss.dat', 'ab') as f:
-                f.write(struct.pack('if', epoch, state.metrics['elbo'].item()))
-
-            self._visualizer.visualize(self._module, epoch)
+            self._test(engine)
 
     def _test_batch(self, engine, batch):
         x, _ = batch
@@ -177,9 +187,13 @@ class Trainer:
         state = self._validator.run(data=self._valid_loader)
         valid_loss = state.metrics["loss"]
 
+        # TODO this is ugly, it would be great to wrap this in the Writer class
         # Open the file in the append-binary mode
-        with open('validation_loss.dat', 'ab') as f:
+        with open(os.path.join(self._writer._logdir, 'validation_loss.dat'), 'ab') as f:
             f.write(struct.pack('if', engine.state.epoch, valid_loss.item()))
+
+        for k, v in state.metrics.items():
+            self._writer.write_scalar(f"valid/{k}", v, global_step=engine.state.epoch)
 
         if valid_loss < self._best_valid_loss:
             print(f"Best validation loss {valid_loss} after epoch {engine.state.epoch}")
@@ -188,6 +202,9 @@ class Trainer:
 
             if self._should_checkpoint_best_valid:
                 self._save_checkpoint(tag="best_valid")
+
+            if engine.state.epoch > self.config['no_test_until_epoch']:
+                self._test(engine)
 
         else:
             self._num_bad_valid_epochs += 1

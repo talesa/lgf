@@ -142,7 +142,8 @@ def setup_experiment(config):
         epochs_per_test=config["epochs_per_test"],
         should_checkpoint_latest=config["should_checkpoint_latest"],
         should_checkpoint_best_valid=config["should_checkpoint_best_valid"],
-        device=device
+        device=device,
+        config=config,
     )
 
     return density, trainer, writer

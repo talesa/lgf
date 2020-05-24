@@ -268,13 +268,23 @@ def get_uci_config(dataset, model, use_baseline):
                 "test_batch_size": 29_556,
             })
 
-            # We convert the presecribed number of steps into epochs
-            if dataset == "gas":
-                config["max_epochs"] = (400_000 * 512) // 852_174
-            elif dataset == "power":
-                config["max_epochs"] = (400_000 * 512) // 1_615_917
-            elif dataset == "miniboone":
-                config["max_epochs"] = 100_000
+        # Convert the presecribed number of steps into epochs
+        if dataset == "gas":
+            config.update({
+                'max_epochs': (400_000 * 512) // 852_174,
+            })
+        elif dataset == "power":
+            config.update({
+                'max_epochs': (400_000 * 512) // 1_615_917,
+            })
+        elif dataset == "miniboone":
+            config.update({
+                "lr": 0.0005,
+                "train_batch_size": 29_556,
+                "test_batch_size": 29_556,
+                "no_test_until_epoch": 7000,
+                'max_epochs': 100_000,
+            })
 
     else:
         assert False, f"Invalid model `{model}' for dataset `{dataset}''"
@@ -305,6 +315,8 @@ def get_uci_config(dataset, model, use_baseline):
         "num_test_elbo_samples": 10 if not use_baseline else 1,
 
         "produce_visualizations": False,
+
+        "no_test_until_epoch": 0,
 
         **config
     }
