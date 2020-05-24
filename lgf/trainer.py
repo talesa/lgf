@@ -1,5 +1,6 @@
 import os
 from collections import Counter
+import struct
 
 import numpy as np
 
@@ -160,6 +161,10 @@ class Trainer:
             for k, v in state.metrics.items():
                 self._writer.write_scalar(f"test/{k}", v, global_step=engine.state.epoch)
 
+            # Open the file in the append-binary mode
+            with open('test_loss.dat', 'ab') as f:
+                f.write(struct.pack('if', epoch, state.metrics['elbo'].item()))
+
             self._visualizer.visualize(self._module, epoch)
 
     def _test_batch(self, engine, batch):
@@ -171,6 +176,10 @@ class Trainer:
     def _validate(self, engine):
         state = self._validator.run(data=self._valid_loader)
         valid_loss = state.metrics["loss"]
+
+        # Open the file in the append-binary mode
+        with open('validation_loss.dat', 'ab') as f:
+            f.write(struct.pack('if', engine.state.epoch, valid_loss.item()))
 
         if valid_loss < self._best_valid_loss:
             print(f"Best validation loss {valid_loss} after epoch {engine.state.epoch}")
