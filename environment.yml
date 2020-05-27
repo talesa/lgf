@@ -16,6 +16,8 @@ dependencies:
   - tqdm
   - pytest
   - pip
+  - jupyter
+  - plotly
   - pip:
     - pyro-ppl
     - torchtestcase
