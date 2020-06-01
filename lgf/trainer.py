@@ -216,6 +216,7 @@ class Trainer:
             # We do this manually (i.e. don't use Ignite's early stopping) to permit
             # saving/resuming more easily
             if self._num_bad_valid_epochs > self._max_bad_valid_epochs:
+                self._test(engine)
                 print(
                     f"No validation improvement after {self._num_bad_valid_epochs} epochs. Terminating."
                 )

@@ -260,7 +260,7 @@ def get_uci_config(dataset, model, use_baseline):
             "num_flow_layers": 32,
 
             "lr_schedule": "plateau",
-            "lr_scheduler_plateau_patience": 1,
+            "lr_scheduler_plateau_patience": 500,
             "lr_scheduler_plateau_factor": 0.21,
         }
 
@@ -274,11 +274,11 @@ def get_uci_config(dataset, model, use_baseline):
         # Convert the presecribed number of steps into epochs
         if dataset == "gas":
             config.update({
-                'max_epochs': (400_000 * 512) // 852_174,
+                'max_epochs': 100_000,
             })
         elif dataset == "power":
             config.update({
-                'max_epochs': (400_000 * 512) // 1_615_917,
+                'max_epochs': 100_000,
             })
         elif dataset == "miniboone":
             config.update({
