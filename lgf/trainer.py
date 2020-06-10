@@ -121,7 +121,8 @@ class Trainer:
         AverageMetric().attach(self._tester)
         ProgressBar(persist=False, desc="Testing").attach(self._tester)
 
-        # self._trainer.add_event_handler(Events.EPOCH_COMPLETED, self._test_hook)
+        if self.config['test_every_epoch']:
+            self._trainer.add_event_handler(Events.EPOCH_COMPLETED, self._test_hook)
         self._tester.add_event_handler(Events.EPOCH_STARTED, lambda _: self._module.eval())
 
         ### Validation
@@ -207,7 +208,8 @@ class Trainer:
             if self._should_checkpoint_best_valid:
                 self._save_checkpoint(tag="best_valid")
 
-            if engine.state.epoch > self.config['no_test_until_epoch']:
+            if not self.config['test_every_epoch'] and \
+                    engine.state.epoch > self.config['no_test_until_epoch']:
                 self._test(engine)
 
         else:

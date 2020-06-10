@@ -285,7 +285,7 @@ def get_uci_config(dataset, model, use_baseline):
                 "lr": 0.0005,
                 "train_batch_size": 29_556,
                 "test_batch_size": 29_556,
-                "no_test_until_epoch": 7000,
+                "no_test_until_epoch": 1,
                 'max_epochs': 100_000,
             })
 
@@ -319,7 +319,8 @@ def get_uci_config(dataset, model, use_baseline):
 
         "produce_visualizations": False,
 
-        "no_test_until_epoch": 0,
+        "no_test_until_epoch": -1,
+        "test_every_epoch": True,
 
         **config
     }
