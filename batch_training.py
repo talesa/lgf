@@ -1,6 +1,8 @@
 from plumbum import local
 from plumbum.cmd import sed, awk, git
 import time
+import socket
+
 
 def inspect_gpus(memory_threshold=500,
                  gpu_util_threshold=5,
@@ -51,14 +53,14 @@ def inspect_gpus(memory_threshold=500,
     averaged_gpu_data = []
     for avg_idx in range(average):
         fieldnames = ['index', 'gpu_uuid', 'memory.total', 'memory.used',
-                    'utilization.gpu', 'gpu_name']
+                      'utilization.gpu', 'gpu_name']
         output = r_smi("--query-gpu=" + ",".join(fieldnames),
-                    "--format=csv,noheader,nounits").replace(" ", "")
+                       "--format=csv,noheader,nounits").replace(" ", "")
 
         gpu_data = []
         for line in output.splitlines():
             gpu_data.append(dict([(name, int(x)) if x.strip().isdigit() else (name, x)
-                            for x, name in zip(line.split(","), fieldnames)]))
+                                  for x, name in zip(line.split(","), fieldnames)]))
         if avg_idx == 0:
             averaged_gpu_data = gpu_data
             for gpu_idx in range(len(averaged_gpu_data)):
@@ -71,7 +73,6 @@ def inspect_gpus(memory_threshold=500,
         time.sleep(1.)
 
     gpu_data = averaged_gpu_data
-
 
     # Find processes and users
     for data in gpu_data:
@@ -99,16 +100,16 @@ def inspect_gpus(memory_threshold=500,
     for data in gpu_data:
         # Is it free?
         if (data['memory.used'] < memory_threshold and
-            data['utilization.gpu'] < gpu_util_threshold):
+                data['utilization.gpu'] < gpu_util_threshold):
 
             free_gpus.append({'gpu_nr': data['index'],
                               'occupation': 0})
-                              # 'session': getSession(data['index'])})
+            # 'session': getSession(data['index'])})
         elif (allow_lightly_used_gpus and
-            data['memory.used'] < upper_memory_threshold and
-            data['utilization.gpu'] < upper_gpu_util_threshold and
-            data['nr_processes'] < max_nr_processes and
-            data['users'][0] in share_with):
+              data['memory.used'] < upper_memory_threshold and
+              data['utilization.gpu'] < upper_gpu_util_threshold and
+              data['nr_processes'] < max_nr_processes and
+              data['users'][0] in share_with):
 
             free_gpus.append({'gpu_nr': data['index'],
                               'occupation': data['nr_processes']})
@@ -116,19 +117,15 @@ def inspect_gpus(memory_threshold=500,
     return free_gpus
 
 
-
-
 datasets_dims = {
-    'mnist': 28*28,
-    'fashion-mnist': 28*28,
+    'mnist': 28 * 28,
+    'fashion-mnist': 28 * 28,
     'miniboone': 43,
     'gas': 8,
     'power': 6,
     'hepmass': 21,
     'bsds300': 21,
 }
-
-
 
 import subprocess
 import os
@@ -138,21 +135,26 @@ import itertools
 gpus_list = list(range(8))
 num_gpus = len(gpus_list)
 
-
 filename = 'main.py'
 
-def execute_process(params, gpuid):
+
+def execute_process(params, gpuid, host):
     env = os.environ.copy()
     env['CUDA_VISIBLE_DEVICES'] = str(gpuid)
-    dataset, model, lr, num_flow_layers, num_ortho_vecs, num_householder = params
-    command = ['python', filename,
-               '--dataset', dataset,
-               '--model', model,
-               '--config', f'num_flow_layers={num_flow_layers}',
-               '--config', f'num_ortho_vecs={int(num_ortho_vecs * datasets_dims[dataset])}',
-               '--config', f'num_householder={int(num_householder * datasets_dims[dataset])}',
-               '--config', f'lr={lr}'
-               ]
+    dataset, model, lr, num_flow_layers, num_ortho_vecs, num_householder, lr_schedule, experiment_name = params
+    command = []
+    if host == 'zizgpu04.cpu.stats.ox.ac.uk':
+        command += ['taskset', '-c', '0-20', '<']
+    command += ['python', filename,
+                '--dataset', dataset,
+                '--model', model,
+                '--config', f'num_flow_layers={num_flow_layers}',
+                '--config', f'num_ortho_vecs={int(num_ortho_vecs * datasets_dims[dataset])}',
+                '--config', f'num_householder={int(num_householder * datasets_dims[dataset])}',
+                '--config', f'lr={lr}',
+                '--config', f'lr_schedule={lr_schedule}',
+                '--config', f'experiment_name={experiment_name}',
+                ]
     command = list(map(str, command))
     print(f"CUDA_VISIBLE_DEVICES={str(gpuid)} {' '.join(command)}")
     subprocess.Popen(command, env=env)
@@ -176,28 +178,59 @@ models = [
 ]
 lrs = [5e-4]
 
-num_flow_layers = [32]
+num_flow_layers = [64, 128]
 
 # multiplier for the number of dimensions of the dataset
 num_ortho_vecs = [1.]
 num_householder = [1.]
 
-tries = 1
-params_list += list(itertools.product(datasets, models, lrs[::-1], num_flow_layers, num_ortho_vecs, num_householder)) * tries
+lr_schedule = ['plateau']
+
+experiment_name = ['11_06_2']
+
+variables_sweeped = [datasets, models, lrs[::-1], num_flow_layers, num_ortho_vecs, num_householder, lr_schedule,
+                     experiment_name]
+
+tries = 3
+params_list += list(itertools.product(*variables_sweeped)) * tries
 
 # lrs = [5e-3, 2e-3, 8e-4, 5e-4, 2e-4, 8e-5, 5e-5]
 
 print(params_list)
 
+host = socket.gethostname()
+
+memory_thresholds = {
+    'zizgpu01.cpu.stats.ox.ac.uk': 3000,
+    'zizgpu02.cpu.stats.ox.ac.uk': 3000,
+    'zizgpu03.cpu.stats.ox.ac.uk': 3000,
+    'zizgpu04.cpu.stats.ox.ac.uk': 3000,
+}
+
+if host == 'zizgpu04.cpu.stats.ox.ac.uk':
+    disallowed_gpus = (0, 1, 2)
+else:
+    disallowed_gpus = tuple()
+
 while params_list:
     free_gpus = inspect_gpus(
-        memory_threshold=5500,
-        gpu_util_threshold=50,
+        memory_threshold=memory_thresholds[host],
+        gpu_util_threshold=95,
         average=2,
         share_with=('agolinsk',))
+    if host == 'zizgpu04.cpu.stats.ox.ac.uk':
+        free_gpus = list(filter(lambda x: x['gpu_nr'] not in (5,), free_gpus))
+    free_gpus = list(filter(lambda x: x['gpu_nr'] not in disallowed_gpus, free_gpus))
+
+    print()
+    print(f"Leftover params: {params_list}")
+    print()
+    print(f"Free gpus: {free_gpus}")
+    print()
+
     if free_gpus:
         params = params_list.pop()
-        execute_process(params, free_gpus[0]['gpu_nr'])
+        execute_process(params, free_gpus[0]['gpu_nr'], host)
     time.sleep(30.)
 
 # while params_list:
