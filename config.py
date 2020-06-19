@@ -251,8 +251,8 @@ def get_uci_config(dataset, model, use_baseline):
     elif model in ["sylvester-orthogonal", "sylvester-householder", "sylvester-triangular",
                    "sylvester-exponential", "sylvester-cayley"]:
         config = {
-            "max_epochs": 1000,
-            "max_bad_valid_epochs": 1000,
+            "max_epochs": 100000,
+            "max_bad_valid_epochs": 10000,
 
             "num_ortho_vecs": 43,
             "num_householder": 43,
@@ -260,7 +260,7 @@ def get_uci_config(dataset, model, use_baseline):
             "num_flow_layers": 32,
 
             "lr_schedule": "plateau",
-            "lr_scheduler_plateau_patience": 500,
+            "lr_scheduler_plateau_patience": 5000,
             "lr_scheduler_plateau_factor": 0.21,
         }
 
@@ -321,6 +321,8 @@ def get_uci_config(dataset, model, use_baseline):
 
         "no_test_until_epoch": -1,
         "test_every_epoch": True,
+
+        "experiment_name": 'none',
 
         **config
     }
