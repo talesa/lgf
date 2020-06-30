@@ -82,11 +82,26 @@ def setup_experiment(config):
     else:
         assert False, f"Invalid optimiser type {config['opt']}"
 
-    opt = opt_class(
-        density.parameters(),
-        lr=config["lr"],
-        weight_decay=config["weight_decay"]
-    )
+    if config["sylvester_orthogonal_matrix_parameters_lower_lr"]:
+        params_orthogonal = []
+        params_other = []
+        for k, v in density.named_parameters():
+            if k.endswith('q_parameters'):
+                params_orthogonal.append(v)
+            else:
+                params_other.append(v)
+        opt = opt_class(
+            ({"params": params_orthogonal, "lr": config["lr"]*0.1, },
+             {"params": params_other, }),
+            lr=config["lr"],
+            weight_decay=config["weight_decay"]
+        )
+    else:
+        opt = opt_class(
+            density.parameters(),
+            lr=config["lr"],
+            weight_decay=config["weight_decay"]
+        )
 
     if config["lr_schedule"] == "cosine":
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
